@@ -11,6 +11,14 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+transporter.verify((error, success) => {
+    if (error) {
+        console.error("❌ Erro na conexão SMTP:");
+        console.error(error);
+    } else {
+        console.log("✅ Conexão SMTP funcionando!");
+    }
+});
 
 async function enviarEmailRecuperacao(email, link) {
 
