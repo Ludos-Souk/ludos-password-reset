@@ -1,16 +1,22 @@
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer");
 
-const resend = new Resend(
-    process.env.RESEND_API_KEY
-);
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+    }
+});
+
 
 async function enviarEmailRecuperacao(email, link) {
 
-    const { data, error } = await resend.emails.send({
+    const mailOptions = {
 
-        from: `Ludos <${process.env.EMAIL_FROM}>`,
+        from: `Ludos <${process.env.EMAIL_USER}>`,
 
-        to: [email],
+        to: email,
 
         subject: "Redefinição de senha - Ludos",
 
@@ -35,42 +41,54 @@ async function enviarEmailRecuperacao(email, link) {
                     table,
                     td,
                     a {
+
                         -webkit-text-size-adjust: 100%;
                         -ms-text-size-adjust: 100%;
+
                     }
 
                     table,
                     td {
+
                         mso-table-lspace: 0pt;
                         mso-table-rspace: 0pt;
+
                     }
 
                     img {
+
                         -ms-interpolation-mode: bicubic;
                         border: 0;
                         height: auto;
                         line-height: 100%;
                         outline: none;
                         text-decoration: none;
+
                     }
 
                     body {
+
                         margin: 0;
                         padding: 0;
                         width: 100% !important;
                         height: 100% !important;
                         background-color: #eef0f5;
+
                     }
 
                     @media screen and (max-width: 600px) {
 
                         .email-container {
+
                             width: 100% !important;
+
                         }
 
                         .fluid-padding {
+
                             padding-left: 20px !important;
                             padding-right: 20px !important;
+
                         }
 
                     }
@@ -82,8 +100,11 @@ async function enviarEmailRecuperacao(email, link) {
             <body style="margin:0; padding:0; background-color:#eef0f5;">
 
                 <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">
+
                     Recebemos uma solicitação para redefinir a senha da sua conta no Ludos.
+
                 </div>
+
 
                 <table
                     role="presentation"
@@ -184,6 +205,8 @@ async function enviarEmailRecuperacao(email, link) {
                                     >
 
                                         Recebemos uma solicitação para redefinir a senha da sua conta no Ludos.
+
+                                        <br><br>
 
                                         Se foi você quem pediu, basta
                                         <strong>clicar no botão abaixo para criar uma nova senha</strong>:
@@ -287,6 +310,8 @@ async function enviarEmailRecuperacao(email, link) {
                                         Este link é válido por
                                         <strong>apenas 1 hora</strong>.
 
+                                        <br><br>
+
                                         Se não foi você quem solicitou essa alteração,
                                         pode ignorar este e-mail tranquilamente.
 
@@ -317,6 +342,7 @@ async function enviarEmailRecuperacao(email, link) {
 
                                 </tr>
 
+
                             </table>
 
                         </td>
@@ -330,9 +356,21 @@ async function enviarEmailRecuperacao(email, link) {
             </html>
 
         `
-    });
+    };
 
-    if (error) {
+
+    try {
+
+        const data = await transporter.sendMail(mailOptions);
+
+        console.log(
+            "✅ E-mail enviado com sucesso:",
+            data.messageId
+        );
+
+        return data;
+
+    } catch (error) {
 
         console.error(
             "❌ Erro ao enviar e-mail:"
@@ -343,14 +381,9 @@ async function enviarEmailRecuperacao(email, link) {
         throw new Error(
             "Erro ao enviar e-mail."
         );
+
     }
 
-    console.log(
-        "✅ E-mail enviado com sucesso:",
-        data
-    );
-
-    return data;
 }
 
 

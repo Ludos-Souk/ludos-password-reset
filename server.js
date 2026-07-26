@@ -14,6 +14,7 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
+
 app.use(cors());
 
 app.use(express.json());
@@ -25,6 +26,7 @@ app.post("/auth/forgot-password", async (req, res) => {
 
         const { email } = req.body;
 
+
         if (!email) {
 
             return res.status(400).json({
@@ -34,10 +36,12 @@ app.post("/auth/forgot-password", async (req, res) => {
 
         }
 
-        // Firebase gera o link original
+
+        // Firebase gera o link original de recuperação
         const link = await auth.generatePasswordResetLink(
             email
         );
+
 
         // Pegamos o oobCode gerado pelo Firebase
         const url = new URL(link);
@@ -46,29 +50,41 @@ app.post("/auth/forgot-password", async (req, res) => {
             "oobCode"
         );
 
-        // Criamos nosso próprio endereço
+
+        // Criamos nosso próprio endereço para a página
+        // de redefinição de senha
         const resetUrl =
             `${process.env.RESET_URL}?oobCode=${encodeURIComponent(oobCode)}`;
+
 
         console.log("Link personalizado:");
         console.log(resetUrl);
 
-        // Envia nosso link no e-mail
+
+        // Envia o e-mail personalizado através do Gmail
+        // utilizando o Nodemailer
         await enviarEmailRecuperacao(
             email,
             resetUrl
         );
 
-        res.json({
+
+        return res.status(200).json({
             sucesso: true,
             mensagem: "E-mail de recuperação enviado."
         });
 
+
     } catch (error) {
+
+        console.error(
+            "❌ Erro no processo de recuperação de senha:"
+        );
 
         console.error(error);
 
-        res.status(500).json({
+
+        return res.status(500).json({
             sucesso: false,
             mensagem: "Erro ao enviar e-mail."
         });
@@ -81,7 +97,7 @@ app.post("/auth/forgot-password", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
 
     console.log(
-        `Servidor rodando em http://localhost:${PORT}`
+        `Servidor rodando na porta ${PORT}`
     );
 
 });
