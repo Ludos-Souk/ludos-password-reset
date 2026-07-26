@@ -8,7 +8,7 @@ async function enviarEmailRecuperacao(email, link) {
 
     const { data, error } = await resend.emails.send({
 
-        from: "Ludos <suporte@ludos.com.br>",
+        from: `Ludos <${process.env.EMAIL_FROM}>`,
 
         to: [email],
 
