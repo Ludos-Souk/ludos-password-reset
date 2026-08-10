@@ -3,6 +3,8 @@ const sgMail = require("@sendgrid/mail");
 const { logoAttachment } = require("./templates/emailUtils");
 const { librasTemplate } = require("./templates/librasTemplate");
 const { duvidaTemplate } = require("./templates/duvidaTemplate");
+const { recuperacaoTemplate } = require("./templates/recuperacaoTemplate");
+const { promocionalTemplate } = require("./templates/promocionalTemplate");
 
 sgMail.setApiKey(process.env.SENDGRID_API_KEY || "not-configured");
 
@@ -27,14 +29,11 @@ async function send(message) {
 }
 
 async function enviarEmailRecuperacao(email, link) {
-    const safeLink = String(link).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-    return send(baseMessage(email, "Redefinição de senha - Ludos", {
-        text: `Acesse o link para redefinir sua senha: ${link}`,
-        html: `<p>Olá!</p><p>Recebemos uma solicitação para redefinir sua senha.</p><p><a href="${safeLink}">Resetar senha</a></p><p>${safeLink}</p>`
-    }));
+    return send(baseMessage(email, "Redefinição de senha - Ludos", recuperacaoTemplate(link)));
 }
 
 const enviarEmailLibras = (email, data) => send(baseMessage(email, "Atendimento em Libras - Ludos", librasTemplate(data)));
 const enviarEmailDuvida = (data) => send(baseMessage(process.env.SUPPORT_EMAIL, "Nova solicitação de atendimento - Ludos", duvidaTemplate(data)));
+const enviarEmailPromocional = (email, data) => send(baseMessage(email, `Um convite especial da Ludos: cupom ${data.cupom}`, promocionalTemplate(data)));
 
-module.exports = { enviarEmailRecuperacao, enviarEmailLibras, enviarEmailDuvida };
+module.exports = { enviarEmailRecuperacao, enviarEmailLibras, enviarEmailDuvida, enviarEmailPromocional };

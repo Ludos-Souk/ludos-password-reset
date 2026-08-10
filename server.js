@@ -1,9 +1,10 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const crypto = require("crypto");
 const { FieldValue } = require("firebase-admin/firestore");
 const { auth, db } = require("./firebase-admin");
-const { enviarEmailRecuperacao, enviarEmailLibras, enviarEmailDuvida } = require("./emailService");
+const { enviarEmailRecuperacao, enviarEmailLibras, enviarEmailDuvida, enviarEmailPromocional } = require("./emailService");
 const { authenticate } = require("./middleware/authenticate");
 const { rateLimit } = require("./middleware/rateLimit");
 
@@ -17,6 +18,13 @@ app.use(express.json({ limit: "20kb" }));
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const supportLimit = rateLimit({ max: Number(process.env.SUPPORT_RATE_LIMIT || 5) });
 const cleanName = (value, fallback) => typeof value === "string" && value.trim() ? value.trim().slice(0, 100) : fallback;
+
+function secretsMatch(received, expected) {
+    if (typeof received !== "string" || typeof expected !== "string" || !expected) return false;
+    const receivedBuffer = Buffer.from(received);
+    const expectedBuffer = Buffer.from(expected);
+    return receivedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
+}
 
 function nextBusinessDay() {
     const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
@@ -38,6 +46,53 @@ app.post("/auth/forgot-password", async (req, res) => {
         console.error("Erro na recuperação:", error.message);
         return res.status(500).json({ sucesso: false, mensagem: "Erro ao enviar e-mail." });
     }
+});
+
+app.post("/api/envios-promocionais/:senhaSecreta", async (req, res) => {
+    if (!secretsMatch(req.params.senhaSecreta, process.env.ENVIO_LOTE_SECRET)) {
+        return res.status(401).json({ sucesso: false, mensagem: "Não autorizado." });
+    }
+
+    const cupom = typeof req.body.cupom === "string" ? req.body.cupom.trim() : "";
+    const envios = req.body.envios;
+    if (!cupom || cupom.length > 60 || /[\r\n]/.test(cupom)) {
+        return res.status(400).json({ sucesso: false, mensagem: "O cupom é obrigatório, não pode conter quebras de linha e deve ter até 60 caracteres." });
+    }
+    if (!Array.isArray(envios) || envios.length === 0 || envios.length > 100) {
+        return res.status(400).json({ sucesso: false, mensagem: "Envios deve conter entre 1 e 100 destinatários." });
+    }
+
+    const destinatarios = [];
+    const emailsVistos = new Set();
+    for (let index = 0; index < envios.length; index += 1) {
+        const nome = cleanName(envios[index]?.nome, "");
+        const email = typeof envios[index]?.email === "string" ? envios[index].email.trim().toLowerCase() : "";
+        if (!nome || !emailPattern.test(email)) {
+            return res.status(400).json({ sucesso: false, mensagem: `Nome ou e-mail inválido no item ${index + 1}.` });
+        }
+        if (!emailsVistos.has(email)) {
+            emailsVistos.add(email);
+            destinatarios.push({ nome, email });
+        }
+    }
+
+    const siteUrl = process.env.SITE_URL;
+    if (!siteUrl) return res.status(500).json({ sucesso: false, mensagem: "SITE_URL não está configurada." });
+
+    const falhas = [];
+    let enviados = 0;
+    for (const destinatario of destinatarios) {
+        try {
+            await enviarEmailPromocional(destinatario.email, { nome: destinatario.nome, cupom, siteUrl });
+            enviados += 1;
+        } catch (error) {
+            console.error("Falha no envio promocional:", destinatario.email, error.message);
+            falhas.push({ email: destinatario.email, motivo: "Falha no envio." });
+        }
+    }
+
+    const status = falhas.length === 0 ? 200 : enviados > 0 ? 207 : 502;
+    return res.status(status).json({ sucesso: falhas.length === 0, enviados, falhas });
 });
 
 app.post("/api/atendimentos/libras", authenticate, supportLimit, async (req, res) => {
