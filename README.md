@@ -1,518 +1,428 @@
-# Ludos Password Reset
+# Ludos - Backend de E-mails e Atendimento
 
-Backend desenvolvido para o **Ludos** com o objetivo de implementar um fluxo personalizado e seguro de **recuperação e redefinição de senha**.
+Backend Node.js do Ludos responsável pela recuperação personalizada de senha, envio de e-mails, atendimento em Libras, encaminhamento de dúvidas e envios promocionais controlados.
 
-A solução foi construída para resolver uma limitação do fluxo padrão do Firebase Authentication: a necessidade de personalizar o e-mail enviado ao usuário e controlar a página para a qual ele é direcionado durante o processo de recuperação.
+O Firebase Authentication continua responsável pela validação dos usuários e pela alteração das senhas. Este backend utiliza o Firebase Admin SDK para gerar links de recuperação, verificar tokens e persistir solicitações de atendimento. O SendGrid realiza a entrega dos e-mails.
 
-O backend atua como uma camada intermediária entre o frontend, o Firebase Authentication e o serviço de envio de e-mails.
+## Repositórios relacionados
 
----
+| Repositório | Responsabilidade |
+| ----------- | ---------------- |
+| [ludos](https://github.com/Ludos-Souk/ludos) | Front-end da loja e integração com Firebase Web SDK. |
+| [ludos-password-reset](https://github.com/Ludos-Souk/ludos-password-reset) | API de recuperação de senha, e-mails e atendimento. |
+| [functions](https://github.com/Ludos-Souk/functions) | Atualização automática dos status dos pedidos. |
 
-## 🎯 Objetivo
+## Funcionalidades
 
-O objetivo principal deste projeto é fornecer um fluxo de recuperação de senha no qual o Ludos tenha controle sobre:
+- Geração de link de recuperação pelo Firebase Admin SDK;
+- Envio de e-mail personalizado de redefinição de senha;
+- Verificação de Firebase ID Token nas rotas protegidas;
+- Solicitação de atendimento em Libras;
+- Agendamento para o próximo dia útil;
+- Envio de dúvidas para a equipe de suporte;
+- Persistência dos atendimentos no Firestore;
+- Limitação de solicitações por usuário ou endereço IP;
+- Envio promocional em lote, protegido por segredo;
+- Remoção de destinatários duplicados;
+- Templates HTML e texto simples;
+- CORS configurável;
+- Respostas JSON padronizadas.
 
-* 📧 Template HTML do e-mail;
-* 🔗 Link de recuperação enviado ao usuário;
-* 🌐 Página de redefinição de senha;
-* 🔑 Geração do código de recuperação através do Firebase;
-* 📤 Envio do e-mail através de SMTP;
-* 🔒 Proteção das credenciais utilizadas pelo backend.
+## Arquitetura
 
-O Firebase Authentication continua sendo responsável pelo gerenciamento da senha do usuário. O backend é responsável principalmente por **gerar o link de recuperação e enviar o e-mail personalizado**.
+```mermaid
+flowchart TD
+    Frontend["Front-end Ludos"] --> API["Node.js e Express"]
+    API --> Auth["Firebase Authentication"]
+    API --> Firestore["Firebase Firestore"]
+    API --> SendGrid["SendGrid"]
+    SendGrid --> Usuario["Usuário ou suporte"]
+```
 
----
+## Tecnologias
 
-# 🏗️ Arquitetura
+- Node.js;
+- Express;
+- Firebase Admin SDK;
+- Firebase Authentication;
+- Firebase Firestore;
+- SendGrid;
+- CORS;
+- dotenv;
+- Render;
+- Git e GitHub.
 
-O fluxo desenvolvido funciona da seguinte maneira:
+## API
+
+Em produção, o front-end utiliza:
 
 ```text
-                    LUDOS
-                      │
-                      ▼
-              ┌───────────────┐
-              │   Frontend    │
-              │   JavaScript  │
-              └───────┬───────┘
-                      │
-                      │ POST /auth/forgot-password
-                      ▼
-              ┌───────────────┐
-              │   Backend     │
-              │ Node.js +     │
-              │ Express       │
-              └───────┬───────┘
-                      │
-             ┌────────┴─────────┐
-             ▼                  ▼
-      ┌─────────────┐    ┌─────────────┐
-      │  Firebase   │    │  Nodemailer │
-      │ Admin SDK   │    │    + SMTP   │
-      └──────┬──────┘    └──────┬──────┘
-             │                  │
-             │ Gera link        │ Envia e-mail
-             │                  │
-             └────────┬─────────┘
-                      ▼
-               📧 Usuário recebe
-                e-mail Ludos
-                      │
-                      ▼
-              🔗 Link de reset
-                      │
-                      ▼
-              Página de redefinição
-                      │
-                      ▼
-             Firebase Authentication
-                      │
-                      ▼
-                🔑 Nova senha
+https://ludos-password-reset.onrender.com
 ```
 
----
+Todas as respostas utilizam JSON. Os formatos mais comuns são:
 
-# 🚀 Funcionalidades
-
-### Recuperação de senha
-
-O usuário informa seu e-mail no frontend e solicita a recuperação da senha.
-
-O frontend envia uma requisição para:
-
-```http
-POST /auth/forgot-password
+```json
+{
+  "sucesso": true,
+  "mensagem": "Operação concluída."
+}
 ```
 
-O backend então:
-
-1. Recebe o e-mail;
-2. Gera o link de recuperação utilizando o Firebase Admin SDK;
-3. Define a URL personalizada da página de redefinição;
-4. Monta o template HTML do e-mail;
-5. Envia o e-mail utilizando Nodemailer;
-6. Retorna uma resposta ao frontend.
-
----
-
-### 📧 E-mail personalizado
-
-Em vez de utilizar o template padrão disponibilizado pelo Firebase, o backend utiliza um template HTML próprio do Ludos.
-
-O e-mail possui:
-
-* Logo do Ludos;
-* Identidade visual da aplicação;
-* Mensagem personalizada;
-* Botão **"Resetar senha"**;
-* Link alternativo para recuperação;
-* Informação sobre a validade do link;
-* Rodapé personalizado.
-
-O link gerado pelo Firebase é inserido dinamicamente no template através de uma variável:
-
-```javascript
-${link}
+```json
+{
+  "sucesso": false,
+  "mensagem": "Não foi possível concluir a operação."
+}
 ```
 
-Dessa forma, o mesmo template pode ser utilizado para diferentes usuários e solicitações.
+### `POST /auth/forgot-password`
 
----
+Solicita o envio do e-mail de recuperação de senha.
 
-# 🔗 API
-
-## `POST /auth/forgot-password`
-
-Inicia o processo de recuperação de senha.
-
-### Request
+#### Requisição
 
 ```http
 POST /auth/forgot-password
 Content-Type: application/json
 ```
 
-### Body
-
 ```json
 {
-    "email": "usuario@email.com"
+  "email": "usuario@email.com"
 }
 ```
 
-### Exemplo com JavaScript
+#### Processo
 
-```javascript
-const response = await fetch(
-    "http://localhost:3000/auth/forgot-password",
+1. Valida o formato do e-mail;
+2. Gera o link pelo Firebase Admin SDK;
+3. Extrai o `oobCode`;
+4. Monta a URL definida em `RESET_URL`;
+5. Envia o template personalizado pelo SendGrid.
+
+#### Respostas
+
+- `200`: e-mail enviado;
+- `400`: e-mail inválido;
+- `500`: falha ao gerar o link ou enviar o e-mail.
+
+### `POST /api/atendimentos/libras`
+
+Cria uma solicitação de atendimento em Libras e envia os dados do agendamento ao usuário.
+
+#### Autenticação
+
+```http
+Authorization: Bearer <FIREBASE_ID_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{
+  "nome": "Nome do cliente"
+}
+```
+
+O ID e o e-mail são obtidos do token autenticado. Um e-mail enviado no corpo não substitui o e-mail do token.
+
+A data é calculada como o próximo dia útil, de segunda a sexta-feira, no fuso `America/Sao_Paulo`. Feriados não são considerados. O horário e o link da reunião são configurados por variáveis de ambiente.
+
+#### Respostas
+
+- `201`: atendimento criado e e-mail enviado;
+- `400`: conta sem e-mail válido;
+- `401`: token ausente, inválido ou expirado;
+- `429`: limite de solicitações atingido;
+- `500`: configuração ausente ou falha interna.
+
+### `POST /api/atendimentos/duvida`
+
+Encaminha uma dúvida para a equipe de suporte.
+
+#### Autenticação
+
+```http
+Authorization: Bearer <FIREBASE_ID_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{
+  "nome": "Nome do cliente",
+  "duvida": "Texto com até 3000 caracteres"
+}
+```
+
+A solicitação é persistida na coleção `atendimentos`. O e-mail enviado ao suporte inclui o identificador da solicitação e a data no fuso de São Paulo.
+
+#### Respostas
+
+- `201`: dúvida persistida e encaminhada;
+- `400`: dúvida vazia, maior que 3000 caracteres ou conta sem e-mail válido;
+- `401`: token ausente, inválido ou expirado;
+- `429`: limite de solicitações atingido;
+- `500`: falha de persistência ou envio.
+
+### `POST /api/envios-promocionais/:senhaSecreta`
+
+Envia uma mensagem promocional individual para até 100 destinatários.
+
+```json
+{
+  "cupom": "LUDOS10",
+  "envios": [
     {
-        method: "POST",
-
-        headers: {
-            "Content-Type": "application/json"
-        },
-
-        body: JSON.stringify({
-            email: email
-        })
+      "nome": "Cliente",
+      "email": "cliente@email.com"
     }
-);
-
-const data = await response.json();
-```
-
-### Resposta de sucesso
-
-```json
-{
-    "sucesso": true,
-    "mensagem": "E-mail de recuperação enviado."
+  ]
 }
 ```
 
-### Resposta de erro
+O segredo recebido na rota é comparado com `ENVIO_LOTE_SECRET`. O endpoint:
 
-Caso ocorra algum problema no processo, o backend retorna uma resposta HTTP de erro contendo uma mensagem explicativa.
+- Valida nomes e e-mails;
+- Limita o lote a 100 itens;
+- Remove e-mails duplicados;
+- Envia uma mensagem individual para cada destinatário;
+- Retorna quantidade de envios e falhas.
 
----
+Possíveis respostas:
 
-# 🔑 Responsabilidade do Firebase
+- `200`: todos os e-mails enviados;
+- `207`: envio parcial;
+- `400`: cupom ou destinatários inválidos;
+- `401`: segredo inválido;
+- `500`: configuração ausente;
+- `502`: todos os envios falharam.
 
-O Firebase continua sendo responsável pela parte crítica da autenticação.
+## Limitação de solicitações
 
-O backend utiliza o **Firebase Admin SDK** para gerar o link de recuperação.
+As rotas de atendimento utilizam, por padrão, até cinco solicitações por usuário ou IP em uma janela de 15 minutos. O total pode ser alterado por `SUPPORT_RATE_LIMIT`.
 
-O link contém informações necessárias para que o Firebase consiga identificar e validar a solicitação, como o código de ação.
+A implementação atual mantém os registros da janela em memória. Em ambientes com múltiplas instâncias, recomenda-se utilizar um armazenamento compartilhado, como Redis.
 
-O backend **não armazena nem manipula a senha do usuário**.
+## Persistência no Firestore
 
-Após o usuário acessar o link, o frontend utiliza o Firebase Web SDK para concluir a alteração da senha:
+As rotas de atendimento gravam a coleção `atendimentos`.
 
-```javascript
-confirmPasswordReset(
-    auth,
-    oobCode,
-    novaSenha
-);
+Exemplo de atendimento em Libras:
+
+```js
+{
+  usuarioId: "uid",
+  email: "usuario@email.com",
+  nome: "Nome",
+  tipo: "libras",
+  status: "Agendado",
+  atendente: "Nome do atendente",
+  data: "11/08/2026",
+  horario: "14:00",
+  meetUrl: "https://meet.google.com/...",
+  criadoEm: serverTimestamp()
+}
 ```
 
-Assim, a responsabilidade fica dividida:
+Exemplo de atendimento por texto:
 
-| Componente              | Responsabilidade                                       |
-| ----------------------- | ------------------------------------------------------ |
-| Frontend                | Solicitar recuperação e permitir criação da nova senha |
-| Backend                 | Gerar o link e enviar o e-mail personalizado           |
-| Firebase Admin          | Gerar o link de recuperação                            |
-| Nodemailer              | Enviar o e-mail                                        |
-| Firebase Authentication | Validar o código e atualizar a senha                   |
+```js
+{
+  usuarioId: "uid",
+  email: "usuario@email.com",
+  nome: "Nome",
+  tipo: "texto",
+  duvida: "Dúvida do usuário",
+  status: "Encaminhado",
+  criadoEm: serverTimestamp()
+}
+```
 
----
+O front-end não deve gravar a mesma solicitação, pois isso criaria documentos duplicados.
 
-# 📂 Estrutura do Backend
+## Estrutura
 
 ```text
-ludos-backend/
-│
-├── server.js
-├── firebase-admin.js
-├── emailService.js
-│
-├── package.json
-├── package-lock.json
+ludos-password-reset/
+├── assets/
+│   └── logo-ludos.png
+├── middleware/
+│   ├── authenticate.js
+│   └── rateLimit.js
+├── templates/
+│   ├── duvidaTemplate.js
+│   ├── emailUtils.js
+│   ├── librasTemplate.js
+│   ├── promocionalTemplate.js
+│   └── recuperacaoTemplate.js
+├── .env.example
 ├── .gitignore
-└── README.md
+├── ATENDIMENTO.md
+├── emailService.js
+├── firebase-admin.js
+├── LICENSE
+├── package-lock.json
+├── package.json
+├── README.md
+└── server.js
 ```
 
-### `server.js`
+## Como executar localmente
 
-Responsável por:
+### Pré-requisitos
 
-* Inicializar o Express;
-* Configurar o CORS;
-* Configurar o processamento de JSON;
-* Disponibilizar o endpoint de recuperação;
-* Inicializar o servidor.
+- Node.js;
+- npm;
+- Projeto Firebase com Authentication e Firestore;
+- Service Account do Firebase;
+- Conta e remetente verificado no SendGrid.
 
----
-
-### `firebase-admin.js`
-
-Responsável pela configuração do Firebase Admin SDK.
-
-As credenciais são obtidas através de variáveis de ambiente:
-
-```text
-FIREBASE_PROJECT_ID
-FIREBASE_CLIENT_EMAIL
-FIREBASE_PRIVATE_KEY
-```
-
-Isso evita que informações sensíveis sejam armazenadas diretamente no código.
-
----
-
-### `emailService.js`
-
-Responsável pelo envio do e-mail de recuperação.
-
-Utiliza:
-
-```text
-Nodemailer
-      ↓
-SMTP
-      ↓
-E-mail do usuário
-```
-
-Também contém o template HTML personalizado utilizado no e-mail.
-
----
-
-# 🛠️ Tecnologias utilizadas
-
-| Tecnologia                  | Utilização                             |
-| --------------------------- | -------------------------------------- |
-| **Node.js**                 | Ambiente de execução do backend        |
-| **Express**                 | Construção da API                      |
-| **Firebase Admin SDK**      | Geração do link de recuperação         |
-| **Firebase Authentication** | Gerenciamento da autenticação e senha  |
-| **Nodemailer**              | Envio do e-mail                        |
-| **SMTP**                    | Serviço de envio de mensagens          |
-| **CORS**                    | Comunicação entre frontend e backend   |
-| **dotenv**                  | Gerenciamento de variáveis de ambiente |
-| **Render**                  | Hospedagem do backend                  |
-| **Git / GitHub**            | Versionamento do projeto               |
-
----
-
-# ⚙️ Como executar localmente
-
-## Pré-requisitos
-
-Para executar o projeto, é necessário possuir:
-
-* [Node.js](https://nodejs.org/) instalado;
-* npm;
-* Um projeto configurado no Firebase;
-* Firebase Authentication habilitado;
-* Uma conta de e-mail com SMTP disponível.
-
----
-
-## 1. Clonar o projeto
+### Clonar e instalar
 
 ```bash
-git clone https://github.com/SEU-USUARIO/ludos-backend.git
+git clone https://github.com/Ludos-Souk/ludos-password-reset.git
+cd ludos-password-reset
+npm ci
 ```
 
-Entre na pasta:
+### Configurar o ambiente
 
-```bash
-cd ludos-backend
-```
-
----
-
-## 2. Instalar as dependências
-
-```bash
-npm install
-```
-
----
-
-## 3. Configurar as variáveis de ambiente
-
-Crie um arquivo:
-
-```text
-.env
-```
-
-na raiz do projeto.
-
-Exemplo:
+Copie `.env.example` para `.env` e preencha as variáveis:
 
 ```env
-SMTP_USER=seuemail@gmail.com
-SMTP_PASS=sua_senha_de_aplicativo
+PORT=3000
+FRONTEND_ORIGIN=http://localhost:5500
+RESET_URL=http://localhost:5500/src/pages/resetarSenha.html
 
-FIREBASE_PROJECT_ID=seu_project_id
-FIREBASE_CLIENT_EMAIL=seu_client_email
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nSUA_CHAVE\n-----END PRIVATE KEY-----\n"
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+SENDGRID_API_KEY=
+SENDGRID_SENDER_EMAIL=
+SENDGRID_SENDER_NAME=Ludos
+
+SITE_URL=http://localhost:5500
+ENVIO_LOTE_SECRET=
+
+SUPPORT_EMAIL=
+SUPPORT_ATTENDANT_NAME=
+SUPPORT_MEET_URL=https://meet.google.com/xxx-xxxx-xxx
+SUPPORT_SCHEDULE_TIME=14:00
+SUPPORT_RATE_LIMIT=5
 ```
 
-### Variáveis
+### Variáveis de ambiente
 
-| Variável                | Descrição                        |
-| ----------------------- | -------------------------------- |
-| `SMTP_USER`             | E-mail utilizado para envio      |
-| `SMTP_PASS`             | Senha de aplicativo do SMTP      |
-| `FIREBASE_PROJECT_ID`   | ID do projeto Firebase           |
-| `FIREBASE_CLIENT_EMAIL` | E-mail da Service Account        |
-| `FIREBASE_PRIVATE_KEY`  | Chave privada da Service Account |
+| Variável | Finalidade |
+| -------- | ---------- |
+| `PORT` | Porta do servidor. O padrão é `3000`. |
+| `FRONTEND_ORIGIN` | Origens permitidas pelo CORS, separadas por vírgula. |
+| `RESET_URL` | Página do front-end que conclui a redefinição. |
+| `FIREBASE_PROJECT_ID` | ID do projeto Firebase. |
+| `FIREBASE_CLIENT_EMAIL` | E-mail da Service Account. |
+| `FIREBASE_PRIVATE_KEY` | Chave privada da Service Account. |
+| `SENDGRID_API_KEY` | Chave da API do SendGrid. |
+| `SENDGRID_SENDER_EMAIL` | Remetente verificado no SendGrid. |
+| `SENDGRID_SENDER_NAME` | Nome apresentado como remetente. |
+| `SITE_URL` | Endereço do site incluído nos e-mails promocionais. |
+| `ENVIO_LOTE_SECRET` | Segredo da rota de envio promocional. |
+| `SUPPORT_EMAIL` | Destinatário das dúvidas dos usuários. |
+| `SUPPORT_ATTENDANT_NAME` | Nome apresentado no atendimento em Libras. |
+| `SUPPORT_MEET_URL` | Link da reunião de atendimento. |
+| `SUPPORT_SCHEDULE_TIME` | Horário do atendimento. |
+| `SUPPORT_RATE_LIMIT` | Máximo de solicitações por janela. |
 
-> ⚠️ **Nunca compartilhe essas informações publicamente.**
-
----
-
-## 4. Iniciar o servidor
-
-Execute:
+### Iniciar o servidor
 
 ```bash
 npm start
 ```
 
-O servidor será executado localmente, utilizando a porta definida pela variável `PORT` ou, em ambiente local, a porta padrão configurada no projeto.
-
-Exemplo:
+O servidor fica disponível em:
 
 ```text
 http://localhost:3000
 ```
 
----
+## Deploy no Render
 
-# 🔒 Segurança
-
-As credenciais utilizadas pelo Firebase Admin e pelo SMTP **não fazem parte do código versionado**.
-
-O projeto utiliza variáveis de ambiente para armazenar informações sensíveis.
-
-O `.gitignore` deve impedir o versionamento de:
-
-```gitignore
-node_modules/
-.env
-serviceAccountKey.json
-```
-
-Entre as informações protegidas estão:
-
-* Senha SMTP;
-* Senha de aplicativo;
-* Firebase Private Key;
-* Credenciais da Service Account.
-
----
-
-# ☁️ Deploy
-
-O backend foi preparado para ser hospedado no **Render**.
-
-### Build Command
-
-```bash
-npm install
-```
-
-### Start Command
-
-```bash
-npm start
-```
-
-As credenciais devem ser configuradas no painel do Render através das Environment Variables.
-
-O backend utiliza a variável `PORT` fornecida pelo ambiente de hospedagem.
-
----
-
-# 🔄 Fluxo completo
-
-O fluxo final implementado pode ser resumido em:
+Configuração sugerida:
 
 ```text
-1. Usuário informa o e-mail
-             ↓
-2. Frontend chama a API
-             ↓
-3. POST /auth/forgot-password
-             ↓
-4. Backend recebe o e-mail
-             ↓
-5. Firebase Admin gera o link
-             ↓
-6. Backend monta o template HTML
-             ↓
-7. Nodemailer envia o e-mail
-             ↓
-8. Usuário recebe o e-mail personalizado
-             ↓
-9. Usuário clica em "Resetar senha"
-             ↓
-10. Página de redefinição é aberta
-             ↓
-11. Firebase valida o código
-             ↓
-12. Usuário define uma nova senha
-             ↓
-13. Firebase atualiza a senha
+Build Command: npm ci
+Start Command: npm start
 ```
 
----
+Cadastre todas as variáveis no painel do Render. Não envie o arquivo `.env`.
 
-# 👥 Equipe
+Configure `FRONTEND_ORIGIN`, `RESET_URL` e `SITE_URL` com os endereços públicos corretos. O servidor utiliza a variável `PORT` fornecida pelo ambiente.
 
-| Integrante           | Área     | GitHub                                                     |
-| -------------------- | -------- | ---------------------------------------------------------- |
-| **Lucas Lima**       | Backend  | [@lucaslimaoliveira](https://github.com/lucaslimaoliveira) |
-| **Giulia Manara**    | Frontend | [@giumanara](https://github.com/giumanara)                 |
-| **João Victor**      | Frontend | [@joohnyxxz](https://github.com/joohnyxxz)                 |
-| **Gabriela Benfica** | UX       | [@gabkbenfica](https://github.com/gabkbenfica)             |
+## Segurança
 
-### Responsabilidades
+- Credenciais não devem ser versionadas;
+- `.env` e `serviceAccountKey.json` devem permanecer no `.gitignore`;
+- O backend verifica Firebase ID Token nas rotas de atendimento;
+- O e-mail e o UID são obtidos do token, não do corpo da requisição;
+- A chave privada aceita `\n` e é normalizada na inicialização;
+- Os corpos JSON são limitados a 20 KB;
+- O segredo promocional é comparado com `timingSafeEqual`;
+- Templates devem escapar todo conteúdo controlado pelo usuário;
+- Chaves expostas devem ser revogadas imediatamente.
 
-**Lucas Lima — Backend**
+Em uma evolução futura, recomenda-se mover o segredo promocional do caminho da URL para um cabeçalho de autorização e utilizar rate limiting compartilhado.
 
-Responsável pela construção do backend de recuperação de senha, integração com Firebase Admin, geração do link de recuperação, configuração do Nodemailer, criação do template de e-mail e preparação do serviço para deploy.
+## Validação manual
 
-**Giulia Manara — Frontend**
+1. Execute `npm start`;
+2. Teste um e-mail válido e inválido em `/auth/forgot-password`;
+3. Obtenha `firebaseUser.getIdToken()` no front-end autenticado;
+4. Teste as duas rotas de atendimento;
+5. Confirme o documento criado no Firestore;
+6. Confirme as versões HTML e texto do e-mail;
+7. Teste token ausente e expirado;
+8. Teste dúvida vazia e com mais de 3000 caracteres;
+9. Ultrapasse o limite para confirmar o status `429`;
+10. Teste o lote promocional com destinatários duplicados e inválidos;
+11. Confirme o funcionamento dos links de redefinição, site, Meet e `mailto:`.
 
-Responsável pelo desenvolvimento da interface frontend e integração com o fluxo de recuperação de senha.
+### Validação de sintaxe
 
-**João Victor — Frontend**
+```bash
+node --check server.js
+node --check emailService.js
+node --check firebase-admin.js
+node --check middleware/authenticate.js
+node --check middleware/rateLimit.js
+node --check templates/duvidaTemplate.js
+node --check templates/librasTemplate.js
+node --check templates/promocionalTemplate.js
+node --check templates/recuperacaoTemplate.js
+```
 
-Responsável pelo desenvolvimento e implementação das interfaces frontend relacionadas ao projeto.
+## Equipe
 
-**Gabriela Benfica — UX**
+| Integrante | Função principal | GitHub |
+| ---------- | ---------------- | ------ |
+| Gabriela Benfica Ricci | UX | [@gabkbenfica](https://github.com/gabkbenfica) |
+| Giulia Monteiro Manara | Front-end | [@giumanara](https://github.com/giumanara) |
+| João Vitor Maldonado Ianoni | Front-end | [@joohnyxxz](https://github.com/joohnyxxz) |
+| Lucas Lima de Oliveira | Back-end | [@lucaslimaoliveira](https://github.com/lucaslimaoliveira) |
 
-Responsável pela experiência do usuário e decisões de UX/UI relacionadas ao fluxo da aplicação.
+Apesar da divisão de responsabilidades, todos os integrantes devem conhecer o funcionamento geral da solução.
 
----
+## Uso de inteligência artificial
 
-# 🤖 Uso de Inteligência Artificial
+Ferramentas de inteligência artificial foram utilizadas como apoio na estruturação do backend, integração com Firebase Admin e SendGrid, elaboração dos templates, configuração do CORS, tratamento de erros, segurança e documentação.
 
-Durante o desenvolvimento deste projeto foi utilizado **ChatGPT (OpenAI)** como ferramenta de apoio.
+Todo conteúdo sugerido foi revisado, testado e adaptado pelos integrantes. A equipe permanece responsável pelas decisões técnicas e pela compreensão do código.
 
-A IA foi utilizada principalmente para:
+Não foram adicionadas instruções ocultas ou mecanismos destinados a interferir em ferramentas automatizadas de avaliação.
 
-* Apoiar a estruturação inicial do backend;
-* Auxiliar na integração com o Firebase Admin SDK;
-* Apoiar a implementação do fluxo de recuperação de senha;
-* Auxiliar na configuração do Nodemailer e SMTP;
-* Auxiliar na identificação e resolução de erros durante o desenvolvimento;
-* Apoiar a configuração do CORS;
-* Auxiliar na preparação do backend para deploy no Render;
-* Apoiar a elaboração e organização da documentação.
+## Status
 
-O código foi analisado, testado, adaptado e compreendido pelos integrantes responsáveis antes de ser utilizado no projeto.
+O backend está integrado ao front-end e preparado para execução local e deploy no Render. As funcionalidades dependem da configuração correta do Firebase, SendGrid e variáveis de ambiente.
 
-A utilização da IA ocorreu como **ferramenta de apoio ao desenvolvimento**, não substituindo a compreensão e a participação dos integrantes na implementação.
+## Licença
 
----
-
-# 📌 Status
-
-**Em desenvolvimento 🚧**
-
-O fluxo de recuperação de senha está implementado e o backend está preparado para comunicação com o frontend e hospedagem em ambiente de produção.
-
----
-
-<p align="center">
-  Desenvolvido para o projeto <strong>Ludos</strong> 💙
-</p>
+Este projeto está licenciado sob a licença MIT. Consulte [LICENSE](LICENSE).
